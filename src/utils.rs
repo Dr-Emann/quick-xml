@@ -35,6 +35,32 @@ pub fn write_byte_string(f: &mut Formatter, byte_string: &[u8]) -> fmt::Result {
     Ok(())
 }
 
+#[derive(Copy, Clone)]
+pub(crate) struct EscapeMask([u64; 4]);
+
+const _:() = assert!(std::mem::size_of::<EscapeMask>() * 8 == (u8::MAX as usize + 1));
+
+impl EscapeMask {
+    pub const fn new(items: &[u8]) -> Self {
+        let mut mask = [0; 4];
+        let mut i = 0;
+        while i < items.len() {
+            let item = items[i];
+            let index = (item / 64) as usize;
+            let bit = 1u64 << (item % 64);
+            mask[index] |= bit;
+            i += 1;
+        }
+        Self(mask)
+    }
+
+    pub const fn contains(&self, item: u8) -> bool {
+        let index = (item / 64) as usize;
+        let bit = 1u64 << (item % 64);
+        self.0[index] & bit != 0
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// A version of [`Cow`] that can borrow from two different buffers, one of them

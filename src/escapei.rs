@@ -6,6 +6,7 @@ use std::ops::Range;
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
+use crate::utils::EscapeMask;
 
 /// Error for XML escape / unescape.
 #[derive(Clone, Debug)]
@@ -72,7 +73,8 @@ impl std::error::Error for EscapeError {}
 /// | `'`       | `&apos;`
 /// | `"`       | `&quot;`
 pub fn escape(raw: &str) -> Cow<str> {
-    _escape(raw, |ch| matches!(ch, b'<' | b'>' | b'&' | b'\'' | b'\"'))
+    const MATCHES: EscapeMask = EscapeMask::new(b"<>&'\"");
+    _escape(raw, MATCHES)
 }
 
 /// Escapes an `&str` and replaces xml special characters (`<`, `>`, `&`)
@@ -89,53 +91,47 @@ pub fn escape(raw: &str) -> Cow<str> {
 /// | `>`       | `&gt;`
 /// | `&`       | `&amp;`
 pub fn partial_escape(raw: &str) -> Cow<str> {
-    _escape(raw, |ch| matches!(ch, b'<' | b'>' | b'&'))
+    const MATCHES: EscapeMask = EscapeMask::new(b"<>&");
+    _escape(raw, MATCHES)
 }
 
 /// Escapes an `&str` and replaces a subset of xml special characters (`<`, `>`,
 /// `&`, `'`, `"`) with their corresponding xml escaped value.
-pub(crate) fn _escape<F: Fn(u8) -> bool>(raw: &str, escape_chars: F) -> Cow<str> {
-    let bytes = raw.as_bytes();
+pub(crate) fn _escape(raw: &str, escape_chars: EscapeMask) -> Cow<str> {
     let mut escaped = None;
-    let mut iter = bytes.iter();
-    let mut pos = 0;
-    while let Some(i) = iter.position(|&b| escape_chars(b)) {
-        if escaped.is_none() {
-            escaped = Some(Vec::with_capacity(raw.len()));
-        }
-        let escaped = escaped.as_mut().expect("initialized");
-        let new_pos = pos + i;
-        escaped.extend_from_slice(&bytes[pos..new_pos]);
-        match bytes[new_pos] {
-            b'<' => escaped.extend_from_slice(b"&lt;"),
-            b'>' => escaped.extend_from_slice(b"&gt;"),
-            b'\'' => escaped.extend_from_slice(b"&apos;"),
-            b'&' => escaped.extend_from_slice(b"&amp;"),
-            b'"' => escaped.extend_from_slice(b"&quot;"),
+    let mut last_pos = 0;
+    for (i, b) in raw.bytes().enumerate().filter(|&(_, b)| escape_chars.contains(b)) {
+        // Include some extra space, the escaped string will be at least some amount larger than the original
+        let escaped = escaped.get_or_insert_with(|| String::with_capacity(raw.len() + 50));
+        escaped.push_str(&raw[last_pos..i]);
+        match b {
+            b'<' => escaped.push_str("&lt;"),
+            b'>' => escaped.push_str("&gt;"),
+            b'\'' => escaped.push_str("&apos;"),
+            b'&' => escaped.push_str("&amp;"),
+            b'"' => escaped.push_str("&quot;"),
 
             // This set of escapes handles characters that should be escaped
             // in elements of xs:lists, because those characters works as
             // delimiters of list elements
-            b'\t' => escaped.extend_from_slice(b"&#9;"),
-            b'\n' => escaped.extend_from_slice(b"&#10;"),
-            b'\r' => escaped.extend_from_slice(b"&#13;"),
-            b' ' => escaped.extend_from_slice(b"&#32;"),
+            b'\t' => escaped.push_str("&#9;"),
+            b'\n' => escaped.push_str("&#10;"),
+            b'\r' => escaped.push_str("&#13;"),
+            b' ' => escaped.push_str("&#32;"),
             _ => unreachable!(
                 "Only '<', '>','\', '&', '\"', '\\t', '\\r', '\\n', and ' ' are escaped"
             ),
         }
-        pos = new_pos + 1;
+        last_pos = i + 1;
     }
 
     if let Some(mut escaped) = escaped {
-        if let Some(raw) = bytes.get(pos..) {
-            escaped.extend_from_slice(raw);
-        }
+        escaped.push_str(&raw[last_pos..]);
         // SAFETY: we operate on UTF-8 input and search for an one byte chars only,
         // so all slices that was put to the `escaped` is a valid UTF-8 encoded strings
         // TODO: Can be replaced with `unsafe { String::from_utf8_unchecked() }`
         // if unsafe code will be allowed
-        Cow::Owned(String::from_utf8(escaped).unwrap())
+        Cow::Owned(escaped)
     } else {
         Cow::Borrowed(raw)
     }

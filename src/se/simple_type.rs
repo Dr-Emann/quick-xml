@@ -6,6 +6,7 @@
 use crate::errors::serialize::DeError;
 use crate::escapei::_escape;
 use crate::se::{Indent, QuoteLevel};
+use crate::utils::EscapeMask;
 use serde::ser::{
     Impossible, Serialize, SerializeSeq, SerializeTuple, SerializeTupleStruct, Serializer,
 };
@@ -30,66 +31,55 @@ fn escape_item(value: &str, target: QuoteTarget, level: QuoteLevel) -> Cow<str> 
     use QuoteTarget::*;
 
     match (target, level) {
-        (_, Full) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items, cannot be used in the item
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' | b'>' | b'\'' | b'\"' => true,
-            _ => false,
-        }),
+        (_, Full) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<', '>', '\'', '"': Required characters to escape
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<>'\"");
+            _escape(value, MASK)
+        }
         //----------------------------------------------------------------------
-        (Text, Partial) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items, cannot be used in the item
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' | b'>' => true,
-            _ => false,
-        }),
-        (Text, Minimal) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items, cannot be used in the item
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' => true,
-            _ => false,
-        }),
+        (Text, Partial) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<', '>': Required characters to escape
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<>");
+            _escape(value, MASK)
+        }
+        (Text, Minimal) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<': Required characters to escape
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<");
+            _escape(value, MASK)
+        }
         //----------------------------------------------------------------------
-        (DoubleQAttr, Partial) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items, cannot be used in the item
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' | b'>' => true,
-            // Double quoted attribute should escape quote
-            b'"' => true,
-            _ => false,
-        }),
-        (DoubleQAttr, Minimal) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items, cannot be used in the item
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' => true,
-            // Double quoted attribute should escape quote
-            b'"' => true,
-            _ => false,
-        }),
+        (DoubleQAttr, Partial) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<', '>': Required characters to escape
+            // '"': Double quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<>\"");
+            _escape(value, MASK)
+        }
+        (DoubleQAttr, Minimal) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<': Required characters to escape
+            // '"': Double quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<\"");
+            _escape(value, MASK)
+        }
         //----------------------------------------------------------------------
-        (SingleQAttr, Partial) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' | b'>' => true,
-            // Single quoted attribute should escape quote
-            b'\'' => true,
-            _ => false,
-        }),
-        (SingleQAttr, Minimal) => _escape(value, |ch| match ch {
-            // Spaces used as delimiters of list items
-            b' ' | b'\r' | b'\n' | b'\t' => true,
-            // Required characters to escape
-            b'&' | b'<' => true,
-            // Single quoted attribute should escape quote
-            b'\'' => true,
-            _ => false,
-        }),
+        (SingleQAttr, Partial) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<', '>': Required characters to escape
+            // '\'': Single quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<>'");
+            _escape(value, MASK)
+        }
+        (SingleQAttr, Minimal) => {
+            // ' ', '\r', '\n', '\t': Spaces used as delimiters of list items, cannot be used in the item
+            // '&', '<': Required characters to escape
+            // '\'': Single quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b" \r\n\t&<'");
+            _escape(value, MASK)
+        }
     }
 }
 
@@ -99,52 +89,48 @@ fn escape_list(value: &str, target: QuoteTarget, level: QuoteLevel) -> Cow<str> 
     use QuoteTarget::*;
 
     match (target, level) {
-        (_, Full) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' | b'>' | b'\'' | b'\"' => true,
-            _ => false,
-        }),
+        (_, Full) => {
+            // '&', '<', '>', '\'', '"': Required characters to escape
+            const MASK: EscapeMask = EscapeMask::new(b"&<>'\"");
+            _escape(value, MASK)
+        }
         //----------------------------------------------------------------------
-        (Text, Partial) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' | b'>' => true,
-            _ => false,
-        }),
-        (Text, Minimal) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' => true,
-            _ => false,
-        }),
+        (Text, Partial) => {
+            // '&', '<', '>': Required characters to escape
+            const MASK: EscapeMask = EscapeMask::new(b"&<>");
+            _escape(value, MASK)
+        }
+        (Text, Minimal) => {
+            // '&', '<': Required characters to escape
+            const MASK: EscapeMask = EscapeMask::new(b"&<");
+            _escape(value, MASK)
+        }
         //----------------------------------------------------------------------
-        (DoubleQAttr, Partial) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' | b'>' => true,
-            // Double quoted attribute should escape quote
-            b'"' => true,
-            _ => false,
-        }),
-        (DoubleQAttr, Minimal) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' => true,
-            // Double quoted attribute should escape quote
-            b'"' => true,
-            _ => false,
-        }),
+        (DoubleQAttr, Partial) => {
+            // '&', '<', '>': Required characters to escape
+            // '"': Double quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b"&<>\"");
+            _escape(value, MASK)
+        }
+        (DoubleQAttr, Minimal) => {
+            // '&', '<': Required characters to escape
+            // '"': Double quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b"&<\"");
+            _escape(value, MASK)
+        }
         //----------------------------------------------------------------------
-        (SingleQAttr, Partial) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' | b'>' => true,
-            // Single quoted attribute should escape quote
-            b'\'' => true,
-            _ => false,
-        }),
-        (SingleQAttr, Minimal) => _escape(value, |ch| match ch {
-            // Required characters to escape
-            b'&' | b'<' => true,
-            // Single quoted attribute should escape quote
-            b'\'' => true,
-            _ => false,
-        }),
+        (SingleQAttr, Partial) => {
+            // '&', '<', '>': Required characters to escape
+            // '\'': Single quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b"&<>'");
+            _escape(value, MASK)
+        }
+        (SingleQAttr, Minimal) => {
+            // '&', '<': Required characters to escape
+            // '\': Single quoted attribute should escape quote
+            const MASK: EscapeMask = EscapeMask::new(b"&<'");
+            _escape(value, MASK)
+        }
     }
 }
 
